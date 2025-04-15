@@ -1,0 +1,56 @@
+USE [master]
+GO
+
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[usp_DBStatus]  
+AS  
+BEGIN  
+    IF (SELECT COUNT(*) FROM sys.databases WHERE state_desc <> 'Online') > 0  
+    BEGIN  
+        DECLARE @table NVARCHAR(MAX);  
+
+        -- HTML and CSS Styling
+        SET @table =  
+        N'<html>' +  
+        N'<head>' +  
+        N'<style>' +  
+        N'body { font-family: Arial, sans-serif; background-color: #f7f7f7; margin: 20px; }' +  
+        N'table { border-collapse: collapse; width: 100%; margin: 10px auto; }' +  
+        N'th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }' +  
+        N'th { background-color: #4CAF50; color: white; }' +  
+        N'tr:nth-child(even) { background-color: #f2f2f2; }' +  
+        N'</style>' +  
+        N'<script>' +  
+        N'function highlightRow(row) { row.style.backgroundColor = "#ffcccb"; }' +  
+        N'function revertRow(row) { row.style.backgroundColor = ""; }' +  
+        N'</script>' +  
+        N'</head>' +  
+        N'<body>' +  
+        N'<h3 style="color: red;">Offline Databases Report</h3>' +  
+        N'<table>' +  
+        N'<tr><th>Database Name</th><th>Database Status</th></tr>' +  
+        CAST ( (  
+            SELECT  
+            td=name, '',td=state_desc  
+            FROM sys.databases WHERE state_desc <> 'Online'  
+            FOR XML PATH('tr'), TYPE  
+        ) AS NVARCHAR(MAX) ) +  
+        N'</table>' +  
+        N'</body>' +  
+        N'</html>';  
+
+        -- Send Email
+        EXEC msdb.dbo.sp_send_dbmail  
+            @profile_name = 'localhost', -- Change to your Profile Name  
+            @recipients = 'MAIL_ID', -- Add recipient email  
+            @subject = 'Offline Databases Report [IP]',  
+            @body = @table,  
+            @body_format = 'HTML';  
+    END  
+    ELSE PRINT 'All Databases are Online';  
+END  
+GO

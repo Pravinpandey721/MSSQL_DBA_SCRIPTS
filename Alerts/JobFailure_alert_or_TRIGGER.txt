@@ -1,0 +1,71 @@
+CREATE or ALter TRIGGER [dbo].[jobfailurenotify]
+ON [dbo].[sysjobhistory]
+FOR INSERT AS                                                                                          
+BEGIN                                                    
+    DECLARE @HTMLBODY1 NVARCHAR(MAX);
+    DECLARE @HTMLBODY2 NVARCHAR(MAX);
+    DECLARE @failed TINYINT, @subject VARCHAR(500), @body VARCHAR(8000), @Joboutcome VARCHAR(500),                                                    
+            @step_id VARCHAR(100), @stepName VARCHAR(500), @message VARCHAR(8000), @STATUS VARCHAR(100), @SERVERName VARCHAR(100);
+                                                    
+    SELECT @Joboutcome = step_name 
+    FROM inserted 
+    WHERE step_name = '(Job outcome)';
+                                                    
+    IF (@Joboutcome IS NULL)                                                                                        
+    BEGIN                                                      
+        SELECT @failed = COUNT(*) 
+        FROM inserted                                                                                          
+        WHERE run_status = 0;
+
+        IF (@failed > 0)                                                                                          
+        BEGIN                                                                                              
+            SELECT @subject = name 
+            FROM msdb.dbo.sysjobs                                                                                          
+            WHERE job_id IN (SELECT DISTINCT(job_id) FROM inserted WHERE run_status = 0) 
+            AND name NOT LIKE 'lsbackup%' AND name NOT LIKE 'sp_who4%';
+            
+            DECLARE @subject1 VARCHAR(500);
+            SET @subject1 = 'Job [' + @subject + '] has been failed on IP of SERVER_NAME';
+            
+            SELECT @step_id = Step_id, @stepName = Step_name, @message = Message 
+            FROM inserted 
+            WHERE run_status = 0;
+
+            SET @STATUS = 'Status : The step failed on ' + CONVERT(VARCHAR(25), GETDATE());
+            SET @SERVERName = CONVERT(VARCHAR(25), SERVERPROPERTY('SERVERNAME'));
+            
+            SET @HTMLBODY1 = N'<table class=''MyTable'' cellpadding=''0'' cellspacing=''0'' width=''700px''>'
+                           + '<caption>DBA JOB Failure Report</caption>'
+                           + '<tr><td width="20%"><b>JOB NAME</b></td><td>' + @subject + '</td></tr>'
+                           + '<tr><td><b>SERVER NAME</b></td><td>' + @SERVERName + '</td></tr>'
+                           + '<tr><td><b>STATUS</b></td><td>' + @STATUS + '</td></tr>'
+                           + '<tr><td><b>STEP ID</b></td><td>' + @step_id + '</td></tr>'
+                           + '<tr><td><b>STEP NAME</b></td><td>' + @stepName + '</td></tr>'
+                           + '<tr><td><b>ERROR</b></td><td>' + @message + '</td></tr>'
+                           + '</table>';
+
+            SET @HTMLBODY2 = N'<html><head><style>'
+                           + '.MyTable { width: 100%; border-collapse: collapse; margin-top: 20px; }'
+                           + '.MyTable caption { font-size: 1.2em; font-weight: bold; background-color: #4CAF50; color: white; padding: 10px; }'
+                           + '.MyTable td { border: 1px solid #ddd; padding: 8px; }'
+                           + '.MyTable tr:nth-child(even) { background-color: #f2f2f2; }'
+                           + '.MyTable tr:hover { background-color: #ffcccb; }'
+                           + '</style></head><body>'
+                           + '<h2>Failure Report</h2>'
+                           + @HTMLBODY1
+                           + '<p>This is a system-generated email. Please do not reply.</p>'
+                           + '</body></html>';
+
+            IF (@HTMLBODY2 IS NOT NULL AND @HTMLBODY2 <> '')
+            BEGIN
+                EXEC msdb.dbo.sp_send_dbmail  
+                    @profile_name = 'Localhost',
+                    @recipients = 'Mail_id',  
+                    @subject = @Subject1,                                                    
+                    @body = @HTMLBODY2,                  
+                    @body_format = 'HTML';
+            END;
+        END;
+    END;
+END;
+GO
